@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalMind — Self-Trained AI</title>
+  <!--
+    Network lockdown: this page can only load its own files and talk to
+    api.github.com (and only when you explicitly log in / sync training
+    data). No other script, image, or network request is allowed to run,
+    even if something in the training data or a future edit tried to
+    smuggle one in. This is what keeps LocalMind from ever "learning from
+    the internet" - it's enforced by the browser, not just by convention.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    connect-src 'self' https://api.github.com;
+    img-src 'self' data:;
+    font-src 'self';
+    object-src 'none';
+    base-uri 'none';
+    form-action 'none';
+    frame-ancestors 'none';
+  ">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay" class="overlay">
+    <div class="overlay-content">
+      <div class="spinner"></div>
+      <p id="loading-text">Initializing LocalMind...</p>
+    </div>
+  </div>
+
+  <!-- SETUP MODAL (first-time setup: enter repo details) -->
+  <div id="setup-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>⚙️ Setup LocalMind</h2>
+      <p>Enter your GitHub repository details to sync training data.</p>
+      <div class="form-group">
+        <label for="setup-owner-input">GitHub Username</label>
+        <input type="text" id="setup-owner-input" placeholder="your-username">
+      </div>
+      <div class="form-group">
+        <label for="setup-repo-input">Repository Name</label>
+        <input type="text" id="setup-repo-input" placeholder="localmind">
+      </div>
+      <p id="setup-error" class="error-text hidden"></p>
+      <div class="modal-actions">
+        <button id="setup-save-btn" class="btn btn-primary">Save & Continue</button>
+        <button id="setup-skip-btn" class="btn btn-secondary">Skip (Local Only)</button>
+      </div>
+      <p class="hint-text">You can also set this up later from the settings.</p>
+    </div>
+  </div>
+
+  <!-- LOGIN MODAL -->
+  <div id="login-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>🔐 Trainer Login</h2>
+      <p>Enter your GitHub Personal Access Token to add training data.</p>
+      <div class="form-group">
+        <label for="login-token-input">GitHub Token</label>
+        <input type="password" id="login-token-input" placeholder="ghp_xxxxxxxxxxxx">
+      </div>
+      <p id="login-error" class="error-text hidden"></p>
+      <div class="modal-actions">
+        <button id="login-btn" class="btn btn-primary">Login</button>
+        <button id="login-close-btn" class="btn btn-secondary">Cancel</button>
+      </div>
+      <p class="hint-text">Need a token? Go to GitHub → Settings → Developer Settings → Personal Access Tokens</p>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app-container">
+    <!-- TOP NAV BAR -->
+    <nav id="navbar">
+      <div class="nav-brand">
+        <span class="brand-icon">🧠</span>
+        <span class="brand-text">LocalMind</span>
+        <span id="model-status" class="status-badge status-untrained">Not Trained</span>
+      </div>
+      <div class="nav-links">
+        <button id="nav-chat-btn" class="nav-btn active">💬 Chat</button>
+        <button id="nav-train-btn" class="nav-btn">🎓 Train</button>
+        <button id="nav-login-btn" class="nav-btn">🔑 Login</button>
+      </div>
+    </nav>
+
+    <!-- CHAT VIEW -->
+    <div id="chat-view" class="view active">
+      <div id="chat-messages" class="chat-messages">
+        <div class="welcome-message">
+          <h2>Welcome to LocalMind 🧠</h2>
+          <p>I'm a self-trained AI that runs entirely in your browser. Start chatting below!</p>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="chat-send-btn" class="btn btn-primary" title="Send message">Send</button>
+      </div>
+    </div>
+
+    <!-- TRAIN VIEW -->
+    <div id="train-view" class="view hidden">
+      <div class="train-container">
+        <!-- Add Training Data Section -->
+        <div class="train-section">
+          <h3>📝 Add Training Data</h3>
+          <p class="section-desc">Teach me something new! Enter a prompt and the response I should give.</p>
+          <div class="form-group">
+            <label for="train-prompt-input">Prompt (what someone asks me)</label>
+            <textarea id="train-prompt-input" placeholder="e.g. What is the capital of New Zealand?" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="train-response-input">Response (what I should say)</label>
+            <textarea id="train-response-input" placeholder="e.g. The capital of New Zealand is Wellington." rows="2"></textarea>
+          </div>
+          <button id="train-add-btn" class="btn btn-primary">➕ Add Entry</button>
+        </div>
+
+        <!-- Training Controls Section -->
+        <div class="train-section">
+          <h3>🚀 Train Model</h3>
+          <div class="train-stats">
+            <span>Training entries: <strong id="train-data-count">0</strong></span>
+            <span id="data-status" class="status-text">Not synced</span>
+          </div>
+          <div id="train-progress-container" class="progress-container hidden">
+            <div class="progress-bar">
+              <div id="train-progress" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <p id="train-progress-text">Starting training...</p>
+          </div>
+          <button id="train-start-btn" class="btn btn-accent">🧠 Start Training</button>
+        </div>
+
+        <!-- Existing Data Section -->
+        <div class="train-section">
+          <h3>📚 Training Data (<span id="train-data-total">0</span> entries)</h3>
+          <div id="train-data-list" class="data-list">
+            <p class="empty-state">No training data yet. Add some above!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts: load in order (dependencies first) -->
+  <script src="vendor/tf.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/tokenizer.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/trainer.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
